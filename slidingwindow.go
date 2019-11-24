@@ -35,16 +35,10 @@ func (w *Window) IncrCount(n int64) {
 	w.count += n
 }
 
-// Reset sets the start boundary of the window to s, and clears the existing count.
-func (w *Window) Reset(s time.Time) {
+// Reset sets the state of the window with the given settings.
+func (w *Window) Reset(s time.Time, c int64) {
 	w.start = s
-	w.count = 0
-}
-
-// Replace replaces the window with another window a.
-func (w *Window) Replace(a Window) {
-	w.start = a.start
-	w.count = a.count
+	w.count = c
 }
 
 type Limiter struct {
@@ -99,8 +93,8 @@ func (lim *Limiter) advance(now time.Time) {
 		// one-window-size behind.
 
 		// The old current-window becomes the new previous-window.
-		lim.prev.Replace(lim.curr)
+		lim.prev.Reset(lim.curr.Start(), lim.curr.Count())
 		// The new current-window is started from currStart.
-		lim.curr.Reset(currStart)
+		lim.curr.Reset(currStart, 0)
 	}
 }
