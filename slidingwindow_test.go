@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestLimiter_AllowN(t *testing.T) {
+func TestLimiter_LocalWindow_AllowN(t *testing.T) {
 	size := time.Second
 	limit := int64(10)
 
@@ -42,7 +42,11 @@ func TestLimiter_AllowN(t *testing.T) {
 		{t30, 10, true},
 	}
 
-	lim := NewLimiter(size, limit)
+	lim, stop := NewLimiter(size, limit, func() (Window, StopFunc) {
+		return NewLocalWindow()
+	})
+	defer stop()
+
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
 			ok := lim.AllowN(c.t, c.n)

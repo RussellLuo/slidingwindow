@@ -6,56 +6,58 @@ import (
 )
 
 // Window represents a fixed-window.
-type Window struct {
-	// The start boundary of the window.
-	// [start, start + size)
-	start time.Time
+type Window interface {
+	// Start returns the start boundary.
+	Start() time.Time
 
-	// The accumulated count of events.
-	count int64
+	// Count returns the accumulated count.
+	Count() int64
+
+	// AddCount increments the accumulated count by n.
+	AddCount(n int64)
+
+	// Reset sets the state of the window with the given settings.
+	Reset(s time.Time, c int64)
 }
 
-// Start returns the start boundary.
-func (w *Window) Start() time.Time {
-	return w.start
-}
+// StopFunc cancel the window's sync behaviour.
+type StopFunc func()
 
-// Count returns the accumulated count.
-func (w *Window) Count() int64 {
-	return w.count
-}
-
-// SetCount changes the accumulated count to c.
-func (w *Window) SetCount(c int64) {
-	w.count = c
-}
-
-// IncrCount increments the accumulated count by n.
-func (w *Window) IncrCount(n int64) {
-	w.count += n
-}
-
-// Reset sets the state of the window with the given settings.
-func (w *Window) Reset(s time.Time, c int64) {
-	w.start = s
-	w.count = c
-}
+// NewWindow creates a new window, and returns a function to stop
+// the possible sync behaviour within it.
+type NewWindow func() (Window, StopFunc)
 
 type Limiter struct {
 	size  time.Duration
 	limit int64
 
 	mu sync.Mutex
-	// The current fixed-window.
+
+	// The current window.
 	curr Window
-	// The previous fixed-window.
+	// The previous window.
 	prev Window
+
+	exitC     chan struct{}
+	waitGroup sync.WaitGroup
 }
 
-func NewLimiter(size time.Duration, limit int64) *Limiter {
-	return &Limiter{
+// NewLimiter creates a new limiter, and returns a function to stop
+// the possible sync behaviour within its internal windows.
+func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter, StopFunc) {
+	currWin, currStop := newWindow()
+	prevWin, prevStop := newWindow()
+
+	lim := &Limiter{
 		size:  size,
 		limit: limit,
+		curr:  currWin,
+		prev:  prevWin,
+	}
+
+	return lim, func() {
+		currStop()
+		prevStop()
 	}
 }
 
@@ -79,7 +81,7 @@ func (lim *Limiter) AllowN(now time.Time, n int64) bool {
 		return false
 	}
 
-	lim.curr.IncrCount(n)
+	lim.curr.AddCount(n)
 	return true
 }
 
