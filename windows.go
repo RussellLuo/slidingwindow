@@ -39,15 +39,12 @@ func (w *LocalWindow) Reset(s time.Time, c int64) {
 }
 
 type Datastore interface {
-	// IncrBy adds delta to the count of the window represented
+	// Add adds delta to the count of the window represented
 	// by start, and returns the new count.
-	IncrBy(start int64, delta int64) (int64, error)
+	Add(key string, start, delta int64) (int64, error)
 
 	// Get returns the count of the window represented by start.
-	Get(start int64) (int64, error)
-
-	// Del clears the count of the window represented by start.
-	Del(start int64) (int64, error)
+	Get(key string, start int64) (int64, error)
 }
 
 // SyncWindow represents a window that will sync counter data to the
@@ -57,19 +54,19 @@ type SyncWindow struct {
 
 	changes int64
 	addC    chan int64
-	resetC  chan int64
 
 	exitC chan struct{}
 
+	key          string
 	store        Datastore
 	syncInterval time.Duration
 }
 
-func NewSyncWindow(store Datastore, syncInterval time.Duration) (Window, StopFunc) {
+func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Window, StopFunc) {
 	w := &SyncWindow{
 		addC:         make(chan int64),
-		resetC:       make(chan int64),
 		exitC:        make(chan struct{}),
+		key:          key,
 		store:        store,
 		syncInterval: syncInterval,
 	}
@@ -100,8 +97,6 @@ func (w *SyncWindow) AddCount(n int64) {
 }
 
 func (w *SyncWindow) Reset(s time.Time, c int64) {
-	w.resetC <- atomic.LoadInt64(&w.base.start)
-
 	atomic.StoreInt64(&w.base.start, s.UnixNano())
 	atomic.StoreInt64(&w.base.count, c)
 }
@@ -117,21 +112,16 @@ func (w *SyncWindow) syncLoop(stopC chan struct{}) {
 		select {
 		case delta := <-w.addC:
 			w.changes += delta
-		case start := <-w.resetC:
-			if newCount, err = w.store.Del(start); err != nil {
-				//fmt.Printf("err: %v\n", err)
-				continue
-			}
 		case <-syncTicker.C:
 			start := atomic.LoadInt64(&w.base.start)
 			if w.changes > 0 {
-				if newCount, err = w.store.IncrBy(start, w.changes); err != nil {
+				if newCount, err = w.store.Add(w.key, start, w.changes); err != nil {
 					//fmt.Printf("err: %v\n", err)
 					continue
 				}
 				w.changes = 0
 			} else {
-				if newCount, err = w.store.Get(start); err != nil {
+				if newCount, err = w.store.Get(w.key, start); err != nil {
 					//fmt.Printf("err: %v\n", err)
 					continue
 				}

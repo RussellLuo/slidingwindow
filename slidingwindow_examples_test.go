@@ -26,15 +26,16 @@ func Example_localWindow() {
 func Example_redisSyncWindow() {
 	// import sw "github.com/RussellLuo/slidingwindow"
 
+	size := time.Second
 	store := sw.NewRedisDatastore(
 		redis.NewClient(&redis.Options{
 			Addr: "localhost:6379",
 		}),
-		"test",
+		2*size, // twice of window-size is just enough.
 	)
 
-	lim, stop := sw.NewLimiter(time.Second, 10, func() (sw.Window, sw.StopFunc) {
-		return sw.NewSyncWindow(store, time.Second)
+	lim, stop := sw.NewLimiter(size, 10, func() (sw.Window, sw.StopFunc) {
+		return sw.NewSyncWindow("test", store, time.Second)
 	})
 	defer stop()
 
