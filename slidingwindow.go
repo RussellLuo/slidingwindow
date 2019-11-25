@@ -86,15 +86,21 @@ func (lim *Limiter) AllowN(now time.Time, n int64) bool {
 // advance updates the current/previous windows resulting from the passage of time.
 func (lim *Limiter) advance(now time.Time) {
 	// Calculate the start boundary of the expected current-window.
-	currStart := now.Truncate(lim.size)
+	newCurrStart := now.Truncate(lim.size)
 
-	if lim.curr.Start().IsZero() || currStart.Sub(lim.curr.Start()) >= lim.size {
-		// The current-window is empty, or its start boundary is at least
-		// one-window-size behind.
+	diffSize := newCurrStart.Sub(lim.curr.Start()) / lim.size
+	if diffSize >= 1 {
+		// The current-window is at least one-size behind the expected one.
 
-		// The old current-window becomes the new previous-window.
-		lim.prev.Reset(lim.curr.Start(), lim.curr.Count())
-		// The new current-window is started from currStart.
-		lim.curr.Reset(currStart, 0)
+		newPrevCount := int64(0)
+		if diffSize == 1 {
+			// The new previous-window will overlap with the old current-window,
+			// so it inherits the count.
+			newPrevCount = lim.curr.Count()
+		}
+		lim.prev.Reset(newCurrStart.Add(-lim.size), newPrevCount)
+
+		// The new current-window always has zero count.
+		lim.curr.Reset(newCurrStart, 0)
 	}
 }

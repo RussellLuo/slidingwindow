@@ -17,6 +17,7 @@ func TestLimiter_AllowN(t *testing.T) {
 	t10 := t0.Add(10 * d)
 	t12 := t0.Add(12 * d)
 	t15 := t0.Add(15 * d)
+	t30 := t0.Add(30 * d)
 
 	cases := []struct {
 		t  time.Time
@@ -35,6 +36,10 @@ func TestLimiter_AllowN(t *testing.T) {
 		{t10, 2, true},
 		{t12, 5, false}, // count will be 11, so it fails
 		{t15, 5, true},
+
+		// prev-window: [t30 - 1s, t30), count: 0
+		// curr-window: [t30, t30 + 1s), count: 0
+		{t30, 10, true},
 	}
 
 	lim := NewLimiter(size, limit)
