@@ -17,10 +17,9 @@ func TestLimiter_LocalWindow_SetLimit(t *testing.T) {
 	size := time.Second
 	limit := int64(10)
 
-	lim, stop := NewLimiter(size, limit, func() (Window, StopFunc) {
+	lim, _ := NewLimiter(size, limit, func() (Window, StopFunc) {
 		return NewLocalWindow()
 	})
-	defer stop()
 
 	got := lim.Limit()
 	if got != limit {
@@ -39,10 +38,9 @@ func TestLimiter_LocalWindow_AllowN(t *testing.T) {
 	size := time.Second
 	limit := int64(10)
 
-	lim, stop := NewLimiter(size, limit, func() (Window, StopFunc) {
+	lim, _ := NewLimiter(size, limit, func() (Window, StopFunc) {
 		return NewLocalWindow()
 	})
-	defer stop()
 
 	d := 100 * time.Millisecond
 	t0 := time.Now().Truncate(size)

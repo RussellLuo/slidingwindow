@@ -11,10 +11,11 @@ import (
 func Example_localWindow() {
 	// import sw "github.com/RussellLuo/slidingwindow"
 
-	lim, stop := sw.NewLimiter(time.Second, 10, func() (sw.Window, sw.StopFunc) {
+	lim, _ := sw.NewLimiter(time.Second, 10, func() (sw.Window, sw.StopFunc) {
+		// NewLocalWindow returns an empty stop function, so it's
+		// unnecessary to call it later.
 		return sw.NewLocalWindow()
 	})
-	defer stop()
 
 	ok := lim.Allow()
 	fmt.Printf("ok: %v\n", ok)
