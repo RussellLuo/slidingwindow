@@ -22,9 +22,8 @@ In this situation, the limiter has permitted 12 events during the current window
 
 ```
 count = 86 * ((60-15)/60) + 12
-      = 86 * 0.75 + 18
-      = 86 * 0.75 + 18
-      = 82.5
+      = 86 * 0.75 + 12
+      = 76.5 events
 ```
 
 ## Documentation
