@@ -13,6 +13,28 @@ type caseArg struct {
 	ok bool
 }
 
+func TestLimiter_LocalWindow_SetLimit(t *testing.T) {
+	size := time.Second
+	limit := int64(10)
+
+	lim, stop := NewLimiter(size, limit, func() (Window, StopFunc) {
+		return NewLocalWindow()
+	})
+	defer stop()
+
+	got := lim.Limit()
+	if got != limit {
+		t.Errorf("lim.Limit() = %d, want: %d", got, limit)
+	}
+
+	newLimit := int64(12)
+	lim.SetLimit(newLimit)
+	got = lim.Limit()
+	if got != newLimit {
+		t.Errorf("lim.Limit() = %d, want: %d", got, newLimit)
+	}
+}
+
 func TestLimiter_LocalWindow_AllowN(t *testing.T) {
 	size := time.Second
 	limit := int64(10)

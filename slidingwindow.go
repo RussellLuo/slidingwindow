@@ -56,6 +56,25 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	}
 }
 
+// Size returns the window size.
+func (lim *Limiter) Size() time.Duration {
+	return lim.size
+}
+
+// Limit returns the maximum events permitted to happen during one window size.
+func (lim *Limiter) Limit() int64 {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
+	return lim.limit
+}
+
+// SetLimit sets a new Limit for the limiter.
+func (lim *Limiter) SetLimit(newLimit int64) {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
+	lim.limit = newLimit
+}
+
 // Allow is shorthand for AllowN(time.Now(), 1).
 func (lim *Limiter) Allow() bool {
 	return lim.AllowN(time.Now(), 1)
