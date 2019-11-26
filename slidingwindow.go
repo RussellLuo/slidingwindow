@@ -56,7 +56,9 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	}
 }
 
-// Size returns the window size.
+// Size returns the time duration of one window size. Note that the size
+// is defined to be read-only, if you need to change the size,
+// create a new limiter with a new size instead.
 func (lim *Limiter) Size() time.Duration {
 	return lim.size
 }

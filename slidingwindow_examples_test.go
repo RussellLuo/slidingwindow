@@ -24,7 +24,7 @@ func Example_localWindow() {
 	// ok: true
 }
 
-func Example_redisSyncWindow() {
+func Example_syncWindowWithRedis() {
 	// import sw "github.com/RussellLuo/slidingwindow"
 
 	size := time.Second
