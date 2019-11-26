@@ -34,7 +34,7 @@ func (d *RedisDatastore) Add(key string, start, value int64) (int64, error) {
 		return 0, err
 	}
 	// Ignore the possible error from EXPIRE command.
-	d.client.Expire(k, d.ttl).Result()
+	d.client.Expire(k, d.ttl).Result() // nolint:errcheck
 	return c, err
 }
 

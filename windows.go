@@ -117,7 +117,7 @@ func (w *SyncWindow) syncLoop(interval time.Duration, stopC, exitC chan struct{}
 			if w.changes > 0 {
 				// Try to add remaining changes to the count of the existing
 				// window represented by start.
-				w.store.Add(w.key, start, w.changes)
+				w.store.Add(w.key, start, w.changes) // nolint:errcheck
 
 				// Always reset changes regardless of possible errors.
 				w.changes = 0
