@@ -16,7 +16,7 @@ $ go get -u github.com/RussellLuo/slidingwindow
 
 Suppose we have a limiter that permits 100 events per minute, and now we arrive at the "75s" point, then the internal windows will be as below:
 
-![slidingwindow](https://raw.githubusercontent.com/RussellLuo/slidingwindow/master/docs/slidingwindow.png)
+![slidingwindow](docs/slidingwindow.png)
 
 In this situation, the limiter has permitted 12 events during the current window, which started 15 seconds ago, and 86 events during the entire previous window. Then the count approximation can be calculated like this:
 
