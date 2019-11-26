@@ -12,13 +12,13 @@ $ go get -u github.com/RussellLuo/slidingwindow
 
 ## Design
 
-`slidingwindow` is an implementation of the scalable rate limiting algorithm used in [Kong][1].
+`slidingwindow` is an implementation of the scalable rate limiting algorithm used by [Kong][1].
 
-Suppose we have a limiter that permits 100 events per minute, and now we arrive at the "75s" point, then the internal windows will be as below:
+Suppose we have a limiter that permits 100 events per minute, and now the time comes at the "75s" point, then the internal windows will be as below:
 
 ![slidingwindow](docs/slidingwindow.png)
 
-In this situation, the limiter has permitted 12 events during the current window, which started 15 seconds ago, and 86 events during the entire previous window. Then the count approximation can be calculated like this:
+In this situation, the limiter has permitted 12 events during the current window, which started 15 seconds ago, and 86 events during the entire previous window. Then the count approximation during the sliding window can be calculated like this:
 
 ```
 count = 86 * ((60-15)/60) + 12
