@@ -20,7 +20,7 @@ type Window interface {
 	Reset(s time.Time, c int64)
 }
 
-// StopFunc cancel the window's sync behaviour.
+// StopFunc stops the window's sync behaviour.
 type StopFunc func()
 
 // NewWindow creates a new window, and returns a function to stop
@@ -33,17 +33,12 @@ type Limiter struct {
 
 	mu sync.Mutex
 
-	// The current window.
 	curr Window
-	// The previous window.
 	prev Window
-
-	exitC     chan struct{}
-	waitGroup sync.WaitGroup
 }
 
 // NewLimiter creates a new limiter, and returns a function to stop
-// the possible sync behaviour within its internal windows.
+// the possible sync behaviours within its internal windows.
 func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter, StopFunc) {
 	currWin, currStop := newWindow()
 	prevWin, prevStop := newWindow()
