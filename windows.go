@@ -1,7 +1,7 @@
 package slidingwindow
 
 import (
-	//"fmt"
+	"log"
 	"sync/atomic"
 	"time"
 )
@@ -54,26 +54,26 @@ type SyncWindow struct {
 
 	changes int64
 	addC    chan int64
+	resetC  chan int64
 
 	exitC chan struct{}
 
-	key          string
-	store        Datastore
-	syncInterval time.Duration
+	key   string
+	store Datastore
 }
 
 func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Window, StopFunc) {
 	w := &SyncWindow{
-		addC:         make(chan int64),
-		exitC:        make(chan struct{}),
-		key:          key,
-		store:        store,
-		syncInterval: syncInterval,
+		addC:   make(chan int64),
+		resetC: make(chan int64),
+		exitC:  make(chan struct{}),
+		key:    key,
+		store:  store,
 	}
 
 	// Start the sync loop.
 	stopC := make(chan struct{})
-	go w.syncLoop(stopC)
+	go w.syncLoop(syncInterval, stopC)
 
 	return w, func() {
 		// Stop the sync loop and wait for it to exit.
@@ -97,32 +97,44 @@ func (w *SyncWindow) AddCount(n int64) {
 }
 
 func (w *SyncWindow) Reset(s time.Time, c int64) {
+	w.resetC <- atomic.LoadInt64(&w.base.start)
+
 	atomic.StoreInt64(&w.base.start, s.UnixNano())
 	atomic.StoreInt64(&w.base.count, c)
 }
 
-func (w *SyncWindow) syncLoop(stopC chan struct{}) {
+func (w *SyncWindow) syncLoop(interval time.Duration, stopC chan struct{}) {
 	var (
 		newCount   int64
 		err        error
-		syncTicker = time.NewTicker(w.syncInterval)
+		syncTicker = time.NewTicker(interval)
 	)
 
 	for {
 		select {
 		case delta := <-w.addC:
 			w.changes += delta
+		case start := <-w.resetC:
+			if w.changes > 0 {
+				// Try to add remaining changes to the count of the existing
+				// window represented by start.
+				w.store.Add(w.key, start, w.changes)
+
+				// Always reset changes regardless of possible errors.
+				w.changes = 0
+			}
+
 		case <-syncTicker.C:
 			start := atomic.LoadInt64(&w.base.start)
 			if w.changes > 0 {
 				if newCount, err = w.store.Add(w.key, start, w.changes); err != nil {
-					//fmt.Printf("err: %v\n", err)
+					log.Printf("err: %v\n", err)
 					continue
 				}
 				w.changes = 0
 			} else {
 				if newCount, err = w.store.Get(w.key, start); err != nil {
-					//fmt.Printf("err: %v\n", err)
+					log.Printf("err: %v\n", err)
 					continue
 				}
 			}
