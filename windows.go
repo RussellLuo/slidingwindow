@@ -56,8 +56,6 @@ type SyncWindow struct {
 	addC    chan int64
 	resetC  chan int64
 
-	exitC chan struct{}
-
 	key   string
 	store Datastore
 }
@@ -66,19 +64,20 @@ func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Win
 	w := &SyncWindow{
 		addC:   make(chan int64),
 		resetC: make(chan int64),
-		exitC:  make(chan struct{}),
 		key:    key,
 		store:  store,
 	}
 
-	// Start the sync loop.
 	stopC := make(chan struct{})
-	go w.syncLoop(syncInterval, stopC)
+	exitC := make(chan struct{})
+
+	// Start the sync loop.
+	go w.syncLoop(syncInterval, stopC, exitC)
 
 	return w, func() {
 		// Stop the sync loop and wait for it to exit.
 		close(stopC)
-		<-w.exitC
+		<-exitC
 	}
 }
 
@@ -103,7 +102,7 @@ func (w *SyncWindow) Reset(s time.Time, c int64) {
 	atomic.StoreInt64(&w.base.count, c)
 }
 
-func (w *SyncWindow) syncLoop(interval time.Duration, stopC chan struct{}) {
+func (w *SyncWindow) syncLoop(interval time.Duration, stopC, exitC chan struct{}) {
 	var (
 		newCount   int64
 		err        error
@@ -140,7 +139,7 @@ func (w *SyncWindow) syncLoop(interval time.Duration, stopC chan struct{}) {
 			}
 			atomic.StoreInt64(&w.base.count, newCount)
 		case <-stopC:
-			w.exitC <- struct{}{}
+			close(exitC)
 			return
 		}
 	}
