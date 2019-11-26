@@ -123,7 +123,7 @@ func TestLimiter_SyncWindow_AllowN(t *testing.T) {
 		//         lim2 (count: 1)  -- add-req  -->  datastore (count: 1)
 		//         lim2 (count: 2)  <-- add-resp --  datastore (count: 2)
 		//
-		//     [2st Sync] -- consistent
+		//     [2nd Sync] -- consistent
 		//         lim1 (count: 1)  -- get-req  -->  datastore (count: 2)
 		//         lim1 (count: 2)  <-- get-resp --  datastore (count: 2)
 		//         lim2 (count: 2)  -- get-req  -->  datastore (count: 2)
