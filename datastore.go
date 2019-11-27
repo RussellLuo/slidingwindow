@@ -42,6 +42,10 @@ func (d *RedisDatastore) Get(key string, start int64) (int64, error) {
 	k := d.fullKey(key, start)
 	value, err := d.client.Get(k).Result()
 	if err != nil {
+		if err == redis.Nil {
+			// redis.Nil is not an error, it only indicates the key does not exist.
+			err = nil
+		}
 		return 0, err
 	}
 	return strconv.ParseInt(value, 10, 64)
