@@ -29,7 +29,7 @@ count = 86 * ((60-15)/60) + 12
 
 ## Test Utilities
 
-![prom_reports](../docs/prom_reports.png)
+![prom_reports](docs/prom_reports.png)
 
 For details, see [testutil](testutil).
 

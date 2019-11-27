@@ -1,7 +1,7 @@
 # Guides
 
 
-## Test Usage
+## Usage
 
 Run the HTTP server (with default options):
 
