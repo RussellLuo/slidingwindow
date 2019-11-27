@@ -26,6 +26,14 @@ count = 86 * ((60-15)/60) + 12
       = 76.5 events
 ```
 
+
+## Test Utilities
+
+![prom_reports](../docs/prom_reports.png)
+
+For details, see [testutil](testutil).
+
+
 ## Documentation
 
 For usage and examples see the [Godoc][2].
