@@ -27,7 +27,7 @@ count = 86 * ((60-15)/60) + 12
 ```
 
 
-## Test Utilities
+## Test Utility
 
 ![prom_reports](docs/prom_reports.png)
 

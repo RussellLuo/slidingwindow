@@ -1,4 +1,4 @@
-# Guides
+# Test Utility
 
 
 ## Usage
@@ -6,6 +6,7 @@
 Run the HTTP server (with default options):
 
 ```bash
+$ go build
 $ ./testutil -listen=:8080
 ```
 

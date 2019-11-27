@@ -20,7 +20,7 @@ var (
 	size         time.Duration
 	limit        int64
 	resourceName string
-	sync         time.Duration
+	syncInterval time.Duration
 	scale        int
 	redisAddr    string
 	listenAddr   string
@@ -60,7 +60,7 @@ func parseFlags() {
 		panic(err)
 	}
 
-	sync, err = time.ParseDuration(*syncFlag)
+	syncInterval, err = time.ParseDuration(*syncFlag)
 	if err != nil {
 		panic(err)
 	}
@@ -87,7 +87,7 @@ func newLimiters() (limiters []Limiter) {
 
 	for i := 0; i < scale; i++ {
 		lim, stop := sw.NewLimiter(size, limit, func() (sw.Window, sw.StopFunc) {
-			return sw.NewSyncWindow(resourceName, store, sync)
+			return sw.NewSyncWindow(resourceName, store, syncInterval)
 		})
 		limiters = append(limiters, Limiter{
 			name: fmt.Sprintf("lim-%d", i),
