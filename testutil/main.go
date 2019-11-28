@@ -35,6 +35,43 @@ var (
 	)
 )
 
+type RedisDatastore struct {
+	client *redis.Client
+	ttl    time.Duration
+}
+
+func newRedisDatastore(client *redis.Client, ttl time.Duration) *RedisDatastore {
+	return &RedisDatastore{client: client, ttl: ttl}
+}
+
+func (d *RedisDatastore) fullKey(key string, start int64) string {
+	return fmt.Sprintf("%s@%d", key, start)
+}
+
+func (d *RedisDatastore) Add(key string, start, value int64) (int64, error) {
+	k := d.fullKey(key, start)
+	c, err := d.client.IncrBy(k, value).Result()
+	if err != nil {
+		return 0, err
+	}
+	// Ignore the possible error from EXPIRE command.
+	d.client.Expire(k, d.ttl).Result() // nolint:errcheck
+	return c, err
+}
+
+func (d *RedisDatastore) Get(key string, start int64) (int64, error) {
+	k := d.fullKey(key, start)
+	value, err := d.client.Get(k).Result()
+	if err != nil {
+		if err == redis.Nil {
+			// redis.Nil is not an error, it only indicates the key does not exist.
+			err = nil
+		}
+		return 0, err
+	}
+	return strconv.ParseInt(value, 10, 64)
+}
+
 type Limiter struct {
 	name string
 	lim  *sw.Limiter
@@ -78,7 +115,7 @@ func parseFlags() {
 }
 
 func newLimiters() (limiters []Limiter) {
-	store := sw.NewRedisDatastore(
+	store := newRedisDatastore(
 		redis.NewClient(&redis.Options{
 			Addr: redisAddr,
 		}),

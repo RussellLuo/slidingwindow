@@ -1,25 +1,22 @@
-package slidingwindow
+package slidingwindow_test
 
 import (
 	"fmt"
 	"strconv"
 	"time"
 
+	sw "github.com/RussellLuo/slidingwindow"
 	"github.com/go-redis/redis"
 )
 
-// RedisClient is the interface that both redis.Client and redis.ClusterClient implement.
-type RedisClient interface {
-	redis.Cmdable
-	Close() error
-}
-
+// RedisDatastore is a reference implementation, which can be used directly
+// if you happen to use go-redis.
 type RedisDatastore struct {
-	client RedisClient
+	client *redis.Client
 	ttl    time.Duration
 }
 
-func NewRedisDatastore(client RedisClient, ttl time.Duration) *RedisDatastore {
+func newRedisDatastore(client *redis.Client, ttl time.Duration) *RedisDatastore {
 	return &RedisDatastore{client: client, ttl: ttl}
 }
 
@@ -49,4 +46,25 @@ func (d *RedisDatastore) Get(key string, start int64) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(value, 10, 64)
+}
+
+func Example_syncWindow() {
+	size := time.Second
+	store := newRedisDatastore(
+		redis.NewClient(&redis.Options{
+			Addr: "localhost:6379",
+		}),
+		2*size, // twice of window-size is just enough.
+	)
+
+	lim, stop := sw.NewLimiter(size, 10, func() (sw.Window, sw.StopFunc) {
+		return sw.NewSyncWindow("test", store, time.Second)
+	})
+	defer stop()
+
+	ok := lim.Allow()
+	fmt.Printf("ok: %v\n", ok)
+
+	// Output:
+	// ok: true
 }
