@@ -48,31 +48,25 @@ type Datastore interface {
 }
 
 // SyncWindow represents a window that will sync counter data to the
-// central datascore asynchronously.
+// central datastore asynchronously.
 type SyncWindow struct {
 	base LocalWindow
 
-	changes int64
-	addC    chan int64
-	resetC  chan int64
-
-	key   string
-	store Datastore
+	addC   chan int64
+	resetC chan int64
 }
 
 func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Window, StopFunc) {
 	w := &SyncWindow{
 		addC:   make(chan int64),
 		resetC: make(chan int64),
-		key:    key,
-		store:  store,
 	}
 
 	stopC := make(chan struct{})
 	exitC := make(chan struct{})
 
 	// Start the sync loop.
-	go w.syncLoop(syncInterval, stopC, exitC)
+	go w.syncLoop(key, store, syncInterval, stopC, exitC)
 
 	return w, func() {
 		// Stop the sync loop and wait for it to exit.
@@ -102,37 +96,37 @@ func (w *SyncWindow) Reset(s time.Time, c int64) {
 	atomic.StoreInt64(&w.base.count, c)
 }
 
-func (w *SyncWindow) syncLoop(interval time.Duration, stopC, exitC chan struct{}) {
+func (w *SyncWindow) syncLoop(key string, store Datastore, interval time.Duration, stopC, exitC chan struct{}) {
 	var (
 		newCount   int64
 		err        error
+		changes    int64
 		syncTicker = time.NewTicker(interval)
 	)
 
 	for {
 		select {
 		case delta := <-w.addC:
-			w.changes += delta
+			changes += delta
 		case start := <-w.resetC:
-			if w.changes > 0 {
+			if changes > 0 {
 				// Try to add remaining changes to the count of the existing
 				// window represented by start.
-				w.store.Add(w.key, start, w.changes) // nolint:errcheck
+				store.Add(key, start, changes) // nolint:errcheck
 
 				// Always reset changes regardless of possible errors.
-				w.changes = 0
+				changes = 0
 			}
-
 		case <-syncTicker.C:
 			start := atomic.LoadInt64(&w.base.start)
-			if w.changes > 0 {
-				if newCount, err = w.store.Add(w.key, start, w.changes); err != nil {
+			if changes > 0 {
+				if newCount, err = store.Add(key, start, changes); err != nil {
 					log.Printf("err: %v\n", err)
 					continue
 				}
-				w.changes = 0
+				changes = 0
 			} else {
-				if newCount, err = w.store.Get(w.key, start); err != nil {
+				if newCount, err = store.Get(key, start); err != nil {
 					log.Printf("err: %v\n", err)
 					continue
 				}
