@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	opAdd   = 1
+	opReset = 2
+)
+
 // LocalWindow represents a window that ignores sync behavior entirely
 // and only stores counters in memory.
 type LocalWindow struct {
@@ -47,19 +52,23 @@ type Datastore interface {
 	Get(key string, start int64) (int64, error)
 }
 
+// op is an operation that represents a state change of the window.
+type op struct {
+	typ  int   // opAdd or opReset
+	data int64 // opAdd-> delta, opReset-> start
+}
+
 // SyncWindow represents a window that will sync counter data to the
 // central datastore asynchronously.
 type SyncWindow struct {
 	base LocalWindow
 
-	addC   chan int64
-	resetC chan int64
+	opC chan op
 }
 
 func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Window, StopFunc) {
 	w := &SyncWindow{
-		addC:   make(chan int64),
-		resetC: make(chan int64),
+		opC: make(chan op),
 	}
 
 	stopC := make(chan struct{})
@@ -85,12 +94,13 @@ func (w *SyncWindow) Count() int64 {
 }
 
 func (w *SyncWindow) AddCount(n int64) {
-	w.addC <- n
+	w.opC <- op{typ: opAdd, data: n}
+
 	atomic.AddInt64(&w.base.count, n)
 }
 
 func (w *SyncWindow) Reset(s time.Time, c int64) {
-	w.resetC <- atomic.LoadInt64(&w.base.start)
+	w.opC <- op{typ: opReset, data: atomic.LoadInt64(&w.base.start)}
 
 	atomic.StoreInt64(&w.base.start, s.UnixNano())
 	atomic.StoreInt64(&w.base.count, c)
@@ -106,16 +116,29 @@ func (w *SyncWindow) syncLoop(key string, store Datastore, interval time.Duratio
 
 	for {
 		select {
-		case delta := <-w.addC:
-			changes += delta
-		case start := <-w.resetC:
-			if changes > 0 {
-				// Try to add remaining changes to the count of the existing
-				// window represented by start.
-				store.Add(key, start, changes) // nolint:errcheck
+		case o := <-w.opC:
+			// By using the same channel opC to receive both opAdd and opReset
+			// signals, we can ensure the opReset signal, which always happens
+			// before the opAdd signal during the reset of the window, to be
+			// handled before the opAdd one.
 
-				// Always reset changes regardless of possible errors.
-				changes = 0
+			switch o.typ {
+			case opAdd:
+				delta := o.data
+				changes += delta
+			case opReset:
+				// opReset is ensured to be handled before opAdd (see above
+				// descriptions), so changes here must belong to the OLD window
+				// before the reset.
+				if changes > 0 {
+					// Try to add remaining changes to the count of the OLD
+					// window represented by start.
+					start := o.data
+					store.Add(key, start, changes) // nolint:errcheck
+
+					// Always reset changes regardless of possible errors.
+					changes = 0
+				}
 			}
 		case <-syncTicker.C:
 			start := atomic.LoadInt64(&w.base.start)
