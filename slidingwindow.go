@@ -38,10 +38,17 @@ type Limiter struct {
 }
 
 // NewLimiter creates a new limiter, and returns a function to stop
-// the possible sync behaviours within its internal windows.
+// the possible sync behaviour within the current window.
 func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter, StopFunc) {
 	currWin, currStop := newWindow()
-	prevWin, prevStop := newWindow()
+
+	// The previous window is static (i.e. no add changes will happen within it),
+	// so we always create it as an instance of LocalWindow.
+	//
+	// In this way, the whole limiter, despite containing two windows, now only
+	// consumes at most one goroutine for the possible sync behaviour within
+	// the current window.
+	prevWin, _ := NewLocalWindow()
 
 	lim := &Limiter{
 		size:  size,
@@ -50,10 +57,7 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 		prev:  prevWin,
 	}
 
-	return lim, func() {
-		currStop()
-		prevStop()
-	}
+	return lim, currStop
 }
 
 // Size returns the time duration of one window size. Note that the size
@@ -108,12 +112,16 @@ func (lim *Limiter) advance(now time.Time) {
 
 	diffSize := newCurrStart.Sub(lim.curr.Start()) / lim.size
 	if diffSize >= 1 {
-		// The current-window is at least one-size behind the expected one.
+		// The current-window is at least one-window-size behind the expected one.
 
 		newPrevCount := int64(0)
 		if diffSize == 1 {
 			// The new previous-window will overlap with the old current-window,
 			// so it inherits the count.
+			//
+			// Note that the count here may be not accurate, since it is only a
+			// SNAPSHOT of the current-window's count, which in itself tends to
+			// be inaccurate due to the asynchronous nature of the sync behaviour.
 			newPrevCount = lim.curr.Count()
 		}
 		lim.prev.Reset(newCurrStart.Add(-lim.size), newPrevCount)
