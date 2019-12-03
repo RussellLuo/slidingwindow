@@ -2,7 +2,6 @@ package slidingwindow
 
 import (
 	"log"
-	"sync/atomic"
 	"time"
 )
 
@@ -38,6 +37,129 @@ func (w *LocalWindow) Reset(s time.Time, c int64) {
 	w.count = c
 }
 
+func (w *LocalWindow) Sync(now time.Time) {
+}
+
+// SyncWindow represents a window that will sync counter data to the
+// central datastore asynchronously.
+//
+// Note that for the best coordination between the window and the synchronizer,
+// the synchronization is not automatic but is driven by the call to Sync. Also
+// there are two sync modes: blocking-sync and non-blocking-sync. In low-concurrency
+// scenarios, you can use the blocking-sync mode for higher accuracy. In other
+// cases (e.g. accuracy is less important than performance, or in high-concurrency
+// scenarios), choose the non-blocking-sync mode instead.
+type SyncWindow struct {
+	LocalWindow
+	changes int64
+
+	syncer       *synchronizer
+	key          string
+	blockingSync bool
+	syncInterval time.Duration
+
+	lastSynced time.Time
+}
+
+// NewSyncWindow creates an instance of SyncWindow with the given configurations.
+// Particularly, blockingSync indicates whether to block waiting for each
+// synchronization to complete.
+func NewSyncWindow(store Datastore, key string, blockingSync bool, syncInterval time.Duration) (Window, StopFunc) {
+	w := &SyncWindow{
+		syncer:       newSynchronizer(store),
+		key:          key,
+		blockingSync: blockingSync,
+		syncInterval: syncInterval,
+	}
+
+	w.syncer.Start()
+	return w, w.syncer.Stop
+}
+
+func (w *SyncWindow) AddCount(n int64) {
+	w.changes += n
+	w.LocalWindow.AddCount(n)
+}
+
+func (w *SyncWindow) Reset(s time.Time, c int64) {
+	// Clear changes accumulated within the OLD window.
+	//
+	// Note that for simplicity, we do not sync remaining changes to the
+	// central datastore before the reset, thus let the periodic synchronization
+	// take full charge of the accuracy of the window's count.
+	w.changes = 0
+
+	w.LocalWindow.Reset(s, c)
+}
+
+func (w *SyncWindow) makeSyncIn() syncIn {
+	return syncIn{
+		key:     w.key,
+		start:   w.LocalWindow.start,
+		count:   w.LocalWindow.count,
+		changes: w.changes,
+	}
+}
+
+func (w *SyncWindow) handleSyncOut(out syncOut) {
+	if out.ok && out.start == w.LocalWindow.start {
+		// Update the state of the window, only when it has not been reset
+		// during the latest sync.
+
+		// Take the changes accumulated by other limiters into consideration.
+		w.LocalWindow.count += out.otherChanges
+
+		// Subtract the amount that has been synced from existing changes.
+		w.changes -= out.changes
+	}
+}
+
+// blockSync does syncing in blocking mode.
+func (w *SyncWindow) blockSync(now time.Time) {
+	if now.Sub(w.lastSynced) >= w.syncInterval {
+		// It's time to sync the existing counter to the central datastore.
+
+		w.syncer.InC <- w.makeSyncIn()
+		w.lastSynced = now
+
+		w.handleSyncOut(<-w.syncer.OutC)
+	}
+}
+
+// nonblockSync tries to sync the window's count to the central datastore, or
+// to update the window's count according to the result from the latest sync.
+// Since the exchange with the datastore is always slower than the execution of
+// nonblockSync, usually nonblockSync must be called at least twice to update
+// the window's count finally.
+func (w *SyncWindow) nonblockSync(now time.Time) {
+	if now.Sub(w.lastSynced) >= w.syncInterval {
+		// It's time to sync the existing counter to the central datastore.
+
+		// Just try to sync. If this fails, we assume the previous sync is
+		// still ongoing, and we wait for the next time.
+		select {
+		case w.syncer.InC <- w.makeSyncIn():
+			w.lastSynced = now
+		default:
+		}
+	}
+
+	// Try to get the result from the latest sync.
+	select {
+	case out := <-w.syncer.OutC:
+		w.handleSyncOut(out)
+	default:
+	}
+}
+
+func (w *SyncWindow) Sync(now time.Time) {
+	if w.blockingSync {
+		w.blockSync(now)
+	} else {
+		w.nonblockSync(now)
+	}
+}
+
 type Datastore interface {
 	// Add adds delta to the count of the window represented
 	// by start, and returns the new count.
@@ -47,96 +169,90 @@ type Datastore interface {
 	Get(key string, start int64) (int64, error)
 }
 
-// SyncWindow represents a window that will sync counter data to the
-// central datastore asynchronously.
-type SyncWindow struct {
-	base    LocalWindow
+type syncIn struct {
+	key     string
+	start   int64
+	count   int64
 	changes int64
 }
 
-func NewSyncWindow(key string, store Datastore, syncInterval time.Duration) (Window, StopFunc) {
-	w := &SyncWindow{}
+type syncOut struct {
+	// Whether the sync succeeds.
+	ok bool
 
-	stopC := make(chan struct{})
-	exitC := make(chan struct{})
+	start int64
+	// The changes accumulated by the local limiter.
+	changes int64
+	// The total changes accumulated by all the other limiters.
+	otherChanges int64
+}
 
-	// Start the sync loop.
-	go w.syncLoop(key, store, syncInterval, stopC, exitC)
+type synchronizer struct {
+	InC  chan syncIn
+	OutC chan syncOut
 
-	return w, func() {
-		// Stop the sync loop and wait for it to exit.
-		close(stopC)
-		<-exitC
+	stopC chan struct{}
+	exitC chan struct{}
+
+	store Datastore
+}
+
+func newSynchronizer(store Datastore) *synchronizer {
+	return &synchronizer{
+		InC:   make(chan syncIn),
+		OutC:  make(chan syncOut),
+		stopC: make(chan struct{}),
+		exitC: make(chan struct{}),
+		store: store,
 	}
 }
 
-func (w *SyncWindow) Start() time.Time {
-	start := atomic.LoadInt64(&w.base.start)
-	return time.Unix(0, start)
+// Start starts the sync loop.
+func (s *synchronizer) Start() {
+	go s.syncLoop(s.store)
 }
 
-func (w *SyncWindow) Count() int64 {
-	return atomic.LoadInt64(&w.base.count)
+// Stop stops the sync loop and waits for it to exit.
+func (s *synchronizer) Stop() {
+	close(s.stopC)
+	<-s.exitC
 }
 
-func (w *SyncWindow) AddCount(n int64) {
-	atomic.AddInt64(&w.changes, n)
-	atomic.AddInt64(&w.base.count, n)
-}
-
-func (w *SyncWindow) Reset(s time.Time, c int64) {
-	// Clear changes accumulated within the OLD window.
-	//
-	// Note that for simplicity, we do not sync remaining changes to the
-	// central datastore before the reset, thus let the periodic synchronization
-	// take full charge of the accuracy of the window's count.
-	atomic.StoreInt64(&w.changes, 0)
-
-	atomic.StoreInt64(&w.base.start, s.UnixNano())
-	atomic.StoreInt64(&w.base.count, c)
-}
-
-func (w *SyncWindow) syncLoop(key string, store Datastore, interval time.Duration, stopC, exitC chan struct{}) {
+func (s *synchronizer) syncLoop(store Datastore) {
 	var (
-		newCount   int64
-		err        error
-		unsynced   = struct{ start, changes int64 }{}
-		syncTicker = time.NewTicker(interval)
+		newCount int64
+		err      error
 	)
 
 	for {
 		select {
-		case <-syncTicker.C:
-			start := atomic.LoadInt64(&w.base.start)
-			if unsynced.start != start {
-				// The window has been reset after the last synchronization.
-
-				// The existing unsynced data is outdated, just clear it.
-				unsynced.start = start
-				unsynced.changes = 0
-			}
-
-			// We accumulate changes here because the existing unsynced
-			// changes may be nonzero if the last synchronization fails.
-			unsynced.changes += atomic.SwapInt64(&w.changes, 0)
-
-			if unsynced.changes > 0 {
-				if newCount, err = store.Add(key, unsynced.start, unsynced.changes); err != nil {
-					log.Printf("err: %v\n", err)
-					continue
-				}
-				unsynced.changes = 0
+		case in := <-s.InC:
+			if in.changes > 0 {
+				newCount, err = store.Add(in.key, in.start, in.changes)
 			} else {
-				if newCount, err = store.Get(key, unsynced.start); err != nil {
-					log.Printf("err: %v\n", err)
-					continue
-				}
+				newCount, err = store.Get(in.key, in.start)
 			}
 
-			atomic.StoreInt64(&w.base.count, newCount)
-		case <-stopC:
-			close(exitC)
-			return
+			out := syncOut{}
+			if err != nil {
+				log.Printf("err: %v\n", err)
+			} else {
+				out.ok = true
+				out.start = in.start
+				out.changes = in.changes
+				out.otherChanges = newCount - in.count
+			}
+
+			select {
+			case s.OutC <- out:
+			case <-s.stopC:
+				goto exit
+			}
+		case <-s.stopC:
+			goto exit
 		}
 	}
+
+exit:
+	close(s.exitC)
 }

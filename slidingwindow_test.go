@@ -7,6 +7,30 @@ import (
 	"time"
 )
 
+const (
+	d     = 100 * time.Millisecond
+	size  = time.Second
+	limit = int64(10)
+)
+
+var (
+	t0  = time.Now().Truncate(size)
+	t1  = t0.Add(1 * d)
+	t2  = t0.Add(2 * d)
+	t3  = t0.Add(3 * d)
+	t4  = t0.Add(4 * d)
+	t5  = t0.Add(5 * d)
+	t6  = t0.Add(6 * d)
+	t10 = t0.Add(10 * d)
+	t12 = t0.Add(12 * d)
+	t13 = t0.Add(13 * d)
+	t14 = t0.Add(14 * d)
+	t15 = t0.Add(15 * d)
+	t16 = t0.Add(16 * d)
+	t18 = t0.Add(18 * d)
+	t30 = t0.Add(30 * d)
+)
+
 type caseArg struct {
 	t  time.Time
 	n  int64
@@ -14,9 +38,6 @@ type caseArg struct {
 }
 
 func TestLimiter_LocalWindow_SetLimit(t *testing.T) {
-	size := time.Second
-	limit := int64(10)
-
 	lim, _ := NewLimiter(size, limit, func() (Window, StopFunc) {
 		return NewLocalWindow()
 	})
@@ -35,22 +56,9 @@ func TestLimiter_LocalWindow_SetLimit(t *testing.T) {
 }
 
 func TestLimiter_LocalWindow_AllowN(t *testing.T) {
-	size := time.Second
-	limit := int64(10)
-
 	lim, _ := NewLimiter(size, limit, func() (Window, StopFunc) {
 		return NewLocalWindow()
 	})
-
-	d := 100 * time.Millisecond
-	t0 := time.Now().Truncate(size)
-	t1 := t0.Add(1 * d)
-	t2 := t0.Add(2 * d)
-	t5 := t0.Add(5 * d)
-	t10 := t0.Add(10 * d)
-	t12 := t0.Add(12 * d)
-	t15 := t0.Add(15 * d)
-	t30 := t0.Add(30 * d)
 
 	cases := []caseArg{
 		// prev-window: empty, count: 0
@@ -114,10 +122,7 @@ func (d *MemDatastore) Get(key string, start int64) (int64, error) {
 	return d.data[k], nil
 }
 
-func TestLimiter_SyncWindow_AllowN(t *testing.T) {
-	size := time.Second
-	limit := int64(10)
-
+func testSyncWindow(t *testing.T, blockingSync bool, cases []caseArg) {
 	store := newMemDatastore()
 	newWindow := func() (Window, StopFunc) {
 		// Sync will happen every 200ms (syncInterval), but for test purpose,
@@ -149,38 +154,11 @@ func TestLimiter_SyncWindow_AllowN(t *testing.T) {
 		//         lim2 (count: 2)  -- get-req  -->  datastore (count: 2)
 		//         lim2 (count: 2)  <-- get-resp --  datastore (count: 2)
 		//
-		return NewSyncWindow("test", store, 200*time.Millisecond)
-	}
-
-	d := 100 * time.Millisecond
-	t0 := time.Now().Truncate(size)
-	t1 := t0.Add(1 * d)
-	t2 := t0.Add(2 * d)
-	t6 := t0.Add(6 * d)
-	t10 := t0.Add(10 * d)
-	t12 := t0.Add(12 * d)
-	t16 := t0.Add(16 * d)
-	t18 := t0.Add(18 * d)
-	t30 := t0.Add(30 * d)
-
-	cases := []caseArg{
-		// prev-window: empty, count: 0
-		// curr-window: [t0, t0 + 1s), count: 0
-		{t0, 1, true},
-		{t1, 1, true},
-		{t2, 1, true},
-		{t6, 5, false}, // after sync: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
-
-		// prev-window: [t0, t0 + 1s), count: 6
-		// curr-window: [t10, t10 + 1s), count: 0
-		{t10, 2, true},
-		{t12, 5, false}, // before sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
-		{t16, 5, false}, // after sync: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
-		{t18, 5, true},
-
-		// prev-window: [t30 - 1s, t30), count: 0
-		// curr-window: [t30, t30 + 1s), count: 0
-		{t30, 10, true},
+		// Also note that one synchronization is driven by one call to `Sync()`
+		// in blocking-sync mode, while in non-blocking-sync mode, it is driven
+		// by two calls to `Sync()`.
+		//
+		return NewSyncWindow(store, "test", blockingSync, 200*time.Millisecond)
 	}
 
 	parallelisms := []struct {
@@ -203,13 +181,8 @@ func TestLimiter_SyncWindow_AllowN(t *testing.T) {
 
 			lim, stop := NewLimiter(size, limit, newWindow)
 
-			prevT := t0
 			for _, c := range p.cases {
 				t.Run("", func(t *testing.T) {
-					// Wait for the given duration for Ticker to work.
-					time.Sleep(c.t.Sub(prevT))
-					prevT = c.t
-
 					ok := lim.AllowN(c.t, c.n)
 					if ok != c.ok {
 						t.Errorf("lim.AllowN(%v, %v) = %v, want: %v",
@@ -223,4 +196,62 @@ func TestLimiter_SyncWindow_AllowN(t *testing.T) {
 			stop()
 		})
 	}
+}
+
+func triggerSync(t time.Time) caseArg {
+	// Construct a failure case at time t, simply for triggering the sync
+	// behaviour of the limiter's window.
+	return caseArg{t, limit + 1, false}
+}
+
+func TestLimiter_Blocking_SyncWindow_AllowN(t *testing.T) {
+	testSyncWindow(t, true, []caseArg{
+		// prev-window: empty, count: 0
+		// curr-window: [t0, t0 + 1s), count: 0
+		{t0, 1, true},
+		{t1, 1, true},
+		{t2, 1, true}, // also trigger Sync
+		triggerSync(t5),
+		{t6, 5, false}, // after sync: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
+
+		// prev-window: [t0, t0 + 1s), count: 6
+		// curr-window: [t10, t10 + 1s), count: 0
+		{t10, 2, true},
+		{t12, 5, false}, // before Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
+		triggerSync(t15),
+		{t16, 5, false}, // after Sync: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
+		{t18, 5, true},
+
+		// prev-window: [t30 - 1s, t30), count: 0
+		// curr-window: [t30, t30 + 1s), count: 0
+		{t30, 10, true},
+	})
+}
+
+func TestLimiter_Nonblocking_SyncWindow_AllowN(t *testing.T) {
+	testSyncWindow(t, false, []caseArg{
+		// prev-window: empty, count: 0
+		// curr-window: [t0, t0 + 1s), count: 0
+		{t0, 1, true},
+		{t1, 1, true},
+		{t2, 1, true}, // also trigger Sync
+		triggerSync(t3),
+		triggerSync(t4),
+		triggerSync(t5),
+		{t6, 5, false}, // after Sync: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
+
+		// prev-window: [t0, t0 + 1s), count: 6
+		// curr-window: [t10, t10 + 1s), count: 0
+		{t10, 2, true},
+		{t12, 5, false}, // before Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
+		triggerSync(t13),
+		triggerSync(t14),
+		triggerSync(t15),
+		{t16, 5, false}, // after Sync: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
+		{t18, 5, true},
+
+		// prev-window: [t30 - 1s, t30), count: 0
+		// curr-window: [t30, t30 + 1s), count: 0
+		{t30, 10, true},
+	})
 }

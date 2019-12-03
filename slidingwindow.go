@@ -18,6 +18,10 @@ type Window interface {
 
 	// Reset sets the state of the window with the given settings.
 	Reset(s time.Time, c int64)
+
+	// Sync tries to exchange data between the window and the central
+	// datastore at time now, to keep the window's count up-to-date.
+	Sync(now time.Time)
 }
 
 // StopFunc stops the window's sync behaviour.
@@ -96,6 +100,9 @@ func (lim *Limiter) AllowN(now time.Time, n int64) bool {
 	elapsed := now.Sub(lim.curr.Start())
 	weight := float64(lim.size-elapsed) / float64(lim.size)
 	count := int64(weight*float64(lim.prev.Count())) + lim.curr.Count()
+
+	// Trigger the possible sync behaviour.
+	defer lim.curr.Sync(now)
 
 	if count+n > lim.limit {
 		return false
