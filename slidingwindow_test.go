@@ -128,9 +128,15 @@ func testSyncWindow(t *testing.T, blockingSync bool, cases []caseArg) {
 		// Sync will happen every 200ms (syncInterval), but for test purpose,
 		// we check at the 600ms boundaries (i.e. t6 and t16, see cases below).
 		//
-		// Because we need to wait for at least twice of syncInterval to ensure
-		// that the two parallel limiters have a consistent view of the count
-		// after two times of exchange with the central datastore.
+		// The reason is that:
+		//
+		//     - We need to wait for at least 400ms (twice of syncInterval) to
+		//       ensure that the two parallel limiters have a consistent view of
+		//       the count after two times of exchange with the central datastore.
+		//       See the examples below for clarification.
+		//
+		//     - The parallel test runner sometimes might cause delays, so we
+		//       wait another 200ms since the last sync.
 		//
 		// e.g.:
 		//
@@ -181,8 +187,14 @@ func testSyncWindow(t *testing.T, blockingSync bool, cases []caseArg) {
 
 			lim, stop := NewLimiter(size, limit, newWindow)
 
+			prevT := t0
 			for _, c := range p.cases {
 				t.Run("", func(t *testing.T) {
+					// Wait the given duration to keep in step with the
+					// other parallel test.
+					time.Sleep(c.t.Sub(prevT))
+					prevT = c.t
+
 					ok := lim.AllowN(c.t, c.n)
 					if ok != c.ok {
 						t.Errorf("lim.AllowN(%v, %v) = %v, want: %v",
@@ -211,15 +223,15 @@ func TestLimiter_Blocking_SyncWindow_AllowN(t *testing.T) {
 		{t0, 1, true},
 		{t1, 1, true},
 		{t2, 1, true}, // also trigger Sync
-		triggerSync(t5),
-		{t6, 5, false}, // after sync: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
+		triggerSync(t4),
+		{t6, 5, false}, // reach consistent: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
 
 		// prev-window: [t0, t0 + 1s), count: 6
 		// curr-window: [t10, t10 + 1s), count: 0
 		{t10, 2, true},
-		{t12, 5, false}, // before Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
-		triggerSync(t15),
-		{t16, 5, false}, // after Sync: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
+		{t12, 5, false}, // also trigger Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
+		triggerSync(t14),
+		{t16, 5, false}, // reach consistent: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
 		{t18, 5, true},
 
 		// prev-window: [t30 - 1s, t30), count: 0
@@ -237,17 +249,17 @@ func TestLimiter_Nonblocking_SyncWindow_AllowN(t *testing.T) {
 		{t2, 1, true}, // also trigger Sync
 		triggerSync(t3),
 		triggerSync(t4),
-		triggerSync(t5),
-		{t6, 5, false}, // after Sync: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
+		triggerSync(t4),
+		{t6, 5, false}, // reach consistent: count will be (2*1 + 2*1 + 2*1 + 5) = 11, so it fails
 
 		// prev-window: [t0, t0 + 1s), count: 6
 		// curr-window: [t10, t10 + 1s), count: 0
 		{t10, 2, true},
-		{t12, 5, false}, // before Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
+		{t12, 5, false}, // also trigger Sync: count will be (4/5*6 + 2 + 5) ≈ 11, so it fails
 		triggerSync(t13),
 		triggerSync(t14),
-		triggerSync(t15),
-		{t16, 5, false}, // after Sync: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
+		triggerSync(t14),
+		{t16, 5, false}, // reach consistent: count will be (2/5*6 + 2*2 + 5) ≈ 11, so it fails
 		{t18, 5, true},
 
 		// prev-window: [t30 - 1s, t30), count: 0
