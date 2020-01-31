@@ -36,8 +36,7 @@ func (w *LocalWindow) Reset(s time.Time, c int64) {
 	w.count = c
 }
 
-func (w *LocalWindow) Sync(now time.Time) {
-}
+func (w *LocalWindow) Sync(now time.Time) {}
 
 // SyncWindow represents a window that will sync counter data to the
 // central datastore asynchronously.
