@@ -114,11 +114,11 @@ func (s *BlockingSynchronizer) Stop() {}
 // the window's count according to the response from the datastore.
 func (s *BlockingSynchronizer) Sync(now time.Time, makeReq MakeFunc, handleResp HandleFunc) {
 	if s.helper.isTimeUp(now) {
+		s.helper.begin(now)
 		resp, err := s.helper.sync(makeReq())
 		if err != nil {
 			log.Printf("err: %v\n", err)
 		}
-		s.helper.begin(now)
 
 		handleResp(resp)
 		s.helper.end()
