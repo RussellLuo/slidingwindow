@@ -164,7 +164,14 @@ func testSyncWindow(t *testing.T, blockingSync bool, cases []caseArg) {
 		// in blocking-sync mode, while in non-blocking-sync mode, it is driven
 		// by two calls to `Sync()`.
 		//
-		return NewSyncWindow(store, "test", blockingSync, 200*time.Millisecond)
+		var syncer Synchronizer
+		syncInterval := 200 * time.Millisecond
+		if blockingSync {
+			syncer = NewBlockingSynchronizer(store, syncInterval)
+		} else {
+			syncer = NewNonblockingSynchronizer(store, syncInterval)
+		}
+		return NewSyncWindow("test", syncer)
 	}
 
 	parallelisms := []struct {

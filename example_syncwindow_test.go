@@ -58,7 +58,7 @@ func Example_syncWindow() {
 	)
 
 	lim, stop := sw.NewLimiter(size, 10, func() (sw.Window, sw.StopFunc) {
-		return sw.NewSyncWindow(store, "test", true, time.Second)
+		return sw.NewSyncWindow("test", sw.NewBlockingSynchronizer(store, time.Second))
 	})
 	defer stop()
 

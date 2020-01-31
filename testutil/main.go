@@ -124,7 +124,7 @@ func newLimiters() (limiters []Limiter) {
 
 	for i := 0; i < scale; i++ {
 		lim, stop := sw.NewLimiter(size, limit, func() (sw.Window, sw.StopFunc) {
-			return sw.NewSyncWindow(store, resourceName, true, syncInterval)
+			return sw.NewSyncWindow(resourceName, sw.NewBlockingSynchronizer(store, syncInterval))
 		})
 		limiters = append(limiters, Limiter{
 			name: fmt.Sprintf("lim-%d", i),
