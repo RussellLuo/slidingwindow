@@ -15,37 +15,6 @@ type Datastore interface {
 	Get(key string, start int64) (int64, error)
 }
 
-type SyncRequest struct {
-	Key     string
-	Start   int64
-	Count   int64
-	Changes int64
-}
-
-type SyncResponse struct {
-	// Whether the synchronization succeeds.
-	OK    bool
-	Start int64
-	// The changes accumulated by the local limiter.
-	Changes int64
-	// The total changes accumulated by all the other limiters.
-	OtherChanges int64
-}
-
-type MakeFunc func() SyncRequest
-type HandleFunc func(SyncResponse)
-
-type Synchronizer interface {
-	// Start starts the synchronization goroutine, if any.
-	Start()
-
-	// Stop stops the synchronization goroutine, if any, and waits for it to exit.
-	Stop()
-
-	// Sync sends a synchronization request.
-	Sync(time.Time, MakeFunc, HandleFunc)
-}
-
 // syncHelper is a helper that will be leveraged by both BlockingSynchronizer
 // and NonblockingSynchronizer.
 type syncHelper struct {

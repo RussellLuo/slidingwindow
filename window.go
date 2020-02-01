@@ -38,6 +38,39 @@ func (w *LocalWindow) Reset(s time.Time, c int64) {
 
 func (w *LocalWindow) Sync(now time.Time) {}
 
+type (
+	SyncRequest struct {
+		Key     string
+		Start   int64
+		Count   int64
+		Changes int64
+	}
+
+	SyncResponse struct {
+		// Whether the synchronization succeeds.
+		OK    bool
+		Start int64
+		// The changes accumulated by the local limiter.
+		Changes int64
+		// The total changes accumulated by all the other limiters.
+		OtherChanges int64
+	}
+
+	MakeFunc   func() SyncRequest
+	HandleFunc func(SyncResponse)
+)
+
+type Synchronizer interface {
+	// Start starts the synchronization goroutine, if any.
+	Start()
+
+	// Stop stops the synchronization goroutine, if any, and waits for it to exit.
+	Stop()
+
+	// Sync sends a synchronization request.
+	Sync(time.Time, MakeFunc, HandleFunc)
+}
+
 // SyncWindow represents a window that will sync counter data to the
 // central datastore asynchronously.
 //
