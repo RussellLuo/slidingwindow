@@ -15,7 +15,7 @@ type LocalWindow struct {
 	count int64
 }
 
-func NewLocalWindow() (Window, StopFunc) {
+func NewLocalWindow() (*LocalWindow, StopFunc) {
 	return &LocalWindow{}, func() {}
 }
 
@@ -85,7 +85,7 @@ type SyncWindow struct {
 }
 
 // NewSyncWindow creates an instance of SyncWindow with the given synchronizer.
-func NewSyncWindow(key string, syncer Synchronizer) (Window, StopFunc) {
+func NewSyncWindow(key string, syncer Synchronizer) (*SyncWindow, StopFunc) {
 	w := &SyncWindow{
 		key:    key,
 		syncer: syncer,
