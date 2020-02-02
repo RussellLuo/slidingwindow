@@ -36,11 +36,11 @@ var (
 )
 
 type RedisDatastore struct {
-	client *redis.Client
+	client redis.Cmdable
 	ttl    time.Duration
 }
 
-func newRedisDatastore(client *redis.Client, ttl time.Duration) *RedisDatastore {
+func NewRedisDatastore(client redis.Cmdable, ttl time.Duration) *RedisDatastore {
 	return &RedisDatastore{client: client, ttl: ttl}
 }
 
@@ -115,7 +115,7 @@ func parseFlags() {
 }
 
 func newLimiters() (limiters []Limiter) {
-	store := newRedisDatastore(
+	store := NewRedisDatastore(
 		redis.NewClient(&redis.Options{
 			Addr: redisAddr,
 		}),

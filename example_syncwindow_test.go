@@ -9,14 +9,14 @@ import (
 	"github.com/go-redis/redis"
 )
 
-// RedisDatastore is a reference implementation, which can be used directly
-// if you happen to use go-redis.
+// RedisDatastore is a reference implementation of the Redis-based datastore,
+// which can be used directly if you happen to use go-redis.
 type RedisDatastore struct {
-	client *redis.Client
+	client redis.Cmdable
 	ttl    time.Duration
 }
 
-func newRedisDatastore(client *redis.Client, ttl time.Duration) *RedisDatastore {
+func NewRedisDatastore(client redis.Cmdable, ttl time.Duration) *RedisDatastore {
 	return &RedisDatastore{client: client, ttl: ttl}
 }
 
@@ -50,7 +50,7 @@ func (d *RedisDatastore) Get(key string, start int64) (int64, error) {
 
 func Example_syncWindow() {
 	size := time.Second
-	store := newRedisDatastore(
+	store := NewRedisDatastore(
 		redis.NewClient(&redis.Options{
 			Addr: "localhost:6379",
 		}),
@@ -58,7 +58,7 @@ func Example_syncWindow() {
 	)
 
 	lim, stop := sw.NewLimiter(size, 10, func() (sw.Window, sw.StopFunc) {
-		return sw.NewSyncWindow("test", sw.NewBlockingSynchronizer(store, time.Second))
+		return sw.NewSyncWindow("test", sw.NewBlockingSynchronizer(store, 500*time.Millisecond))
 	})
 	defer stop()
 
