@@ -18,28 +18,36 @@ type Datastore interface {
 // syncHelper is a helper that will be leveraged by both BlockingSynchronizer
 // and NonblockingSynchronizer.
 type syncHelper struct {
-	store Datastore
-
+	store        Datastore
 	syncInterval time.Duration
-	inProgress   bool
-	lastSynced   time.Time
+
+	inProgress bool // Whether the synchronization is in progress.
+	lastSynced time.Time
 }
 
-func (h *syncHelper) begin(now time.Time) {
+func newSyncHelper(store Datastore, syncInterval time.Duration) *syncHelper {
+	return &syncHelper{store: store, syncInterval: syncInterval}
+}
+
+// IsTimeUp returns whether it's time to sync data to the central datastore.
+func (h *syncHelper) IsTimeUp(now time.Time) bool {
+	return !h.inProgress && now.Sub(h.lastSynced) >= h.syncInterval
+}
+
+func (h *syncHelper) InProgress() bool {
+	return h.inProgress
+}
+
+func (h *syncHelper) Begin(now time.Time) {
 	h.inProgress = true
 	h.lastSynced = now
 }
 
-func (h *syncHelper) end() {
+func (h *syncHelper) End() {
 	h.inProgress = false
 }
 
-// isTimeUp returns whether it's time to sync data to the central datastore.
-func (h *syncHelper) isTimeUp(now time.Time) bool {
-	return !h.inProgress && now.Sub(h.lastSynced) >= h.syncInterval
-}
-
-func (h *syncHelper) sync(req SyncRequest) (resp SyncResponse, err error) {
+func (h *syncHelper) Sync(req SyncRequest) (resp SyncResponse, err error) {
 	var newCount int64
 
 	if req.Changes > 0 {
@@ -71,7 +79,7 @@ type BlockingSynchronizer struct {
 
 func NewBlockingSynchronizer(store Datastore, syncInterval time.Duration) *BlockingSynchronizer {
 	return &BlockingSynchronizer{
-		helper: &syncHelper{store: store, syncInterval: syncInterval},
+		helper: newSyncHelper(store, syncInterval),
 	}
 }
 
@@ -82,15 +90,16 @@ func (s *BlockingSynchronizer) Stop() {}
 // Sync sends the window's count to the central datastore, and then update
 // the window's count according to the response from the datastore.
 func (s *BlockingSynchronizer) Sync(now time.Time, makeReq MakeFunc, handleResp HandleFunc) {
-	if s.helper.isTimeUp(now) {
-		s.helper.begin(now)
-		resp, err := s.helper.sync(makeReq())
+	if s.helper.IsTimeUp(now) {
+		s.helper.Begin(now)
+
+		resp, err := s.helper.Sync(makeReq())
 		if err != nil {
 			log.Printf("err: %v\n", err)
 		}
 
 		handleResp(resp)
-		s.helper.end()
+		s.helper.End()
 	}
 }
 
@@ -114,7 +123,7 @@ func NewNonblockingSynchronizer(store Datastore, syncInterval time.Duration) *No
 		respC:  make(chan SyncResponse),
 		stopC:  make(chan struct{}),
 		exitC:  make(chan struct{}),
-		helper: &syncHelper{store: store, syncInterval: syncInterval},
+		helper: newSyncHelper(store, syncInterval),
 	}
 }
 
@@ -133,7 +142,7 @@ func (s *NonblockingSynchronizer) syncLoop() {
 	for {
 		select {
 		case req := <-s.reqC:
-			resp, err := s.helper.sync(req)
+			resp, err := s.helper.Sync(req)
 			if err != nil {
 				log.Printf("err: %v\n", err)
 			}
@@ -152,27 +161,27 @@ exit:
 	close(s.exitC)
 }
 
-// Sync tries to sync the window's count to the central datastore, or to update
+// Sync tries to send the window's count to the central datastore, or to update
 // the window's count according to the response from the latest synchronization.
 // Since the exchange with the datastore is always slower than the execution of Sync,
 // usually Sync must be called at least twice to update the window's count finally.
 func (s *NonblockingSynchronizer) Sync(now time.Time, makeReq MakeFunc, handleResp HandleFunc) {
-	if s.helper.isTimeUp(now) {
+	if s.helper.IsTimeUp(now) {
 		// Just try to sync. If this fails, we assume the previous synchronization
 		// is still ongoing, and we wait for the next time.
 		select {
 		case s.reqC <- makeReq():
-			s.helper.begin(now)
+			s.helper.Begin(now)
 		default:
 		}
 	}
 
-	if s.helper.inProgress {
+	if s.helper.InProgress() {
 		// Try to get the response from the latest synchronization.
 		select {
 		case resp := <-s.respC:
 			handleResp(resp)
-			s.helper.end()
+			s.helper.End()
 		default:
 		}
 	}
