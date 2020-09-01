@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"time"
 
-	sw "github.com/RussellLuo/slidingwindow"
 	"github.com/go-redis/redis"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	sw "github.com/insolar/slidingwindow"
 )
 
 var (
