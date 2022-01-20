@@ -64,6 +64,16 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	return lim, currStop
 }
 
+// CurrentWindowCount returns the accumulated count of the curr window.
+func (lim *Limiter) CurrentWindowCount() int64 {
+	return lim.curr.Count()
+}
+
+// PreviousWindowCount returns the accumulated count of the prev window.
+func (lim *Limiter) PreviousWindowCount() int64 {
+	return lim.prev.Count()
+}
+
 // Size returns the time duration of one window size. Note that the size
 // is defined to be read-only, if you need to change the size,
 // create a new limiter with a new size instead.
